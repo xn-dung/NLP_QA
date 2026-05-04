@@ -36,7 +36,8 @@ def generate_rag_answer(
                         "lien quan hoac cap nhat, khong thay the noi dung tai lieu neu khong co can cu. "
                         "Khong bia thong tin ngoai context. Neu context khong du, noi ro phan nao chua du. "
                         "Neu document va web mau thuan, neu ro su khac nhau. Cau tra loi nen mach lac, "
-                        "co ket luan truc tiep, va dan nguon bang ten file hoac ten trang trong ngoac."
+                        "co ket luan truc tiep, va dan nguon bang ten file hoac ten trang trong ngoac. "
+                        "Khong ket thuc bang cau dang do, ngoac mo, hoac y chua hoan thanh."
                     )
                 }
             ]
@@ -60,7 +61,7 @@ def generate_rag_answer(
         ],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 700,
+            "maxOutputTokens": 1400,
         },
     }
     response = requests.post(
@@ -74,7 +75,25 @@ def generate_rag_answer(
     )
     response.raise_for_status()
     data = response.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    return _extract_gemini_text(data)
+
+
+def _extract_gemini_text(data: dict) -> str:
+    candidates = data.get("candidates", [])
+    if not candidates:
+        raise RuntimeError("Gemini returned no candidates.")
+
+    parts = candidates[0].get("content", {}).get("parts", [])
+    text = "\n".join(part.get("text", "") for part in parts if part.get("text", "")).strip()
+    finish_reason = candidates[0].get("finishReason", "")
+
+    if not text:
+        raise RuntimeError(f"Gemini returned empty text. finishReason={finish_reason}")
+
+    if finish_reason == "MAX_TOKENS":
+        text += "\n\n[Output may be truncated because Gemini reached the token limit.]"
+
+    return text
 
 
 def _format_document_context(hits: list[SearchHit], max_chars: int = 5000) -> str:
