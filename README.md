@@ -79,6 +79,7 @@ Answer behavior:
 Memory controls:
 
 - Uploads larger than 25 MB are skipped.
+- Uploaded files are only saved when `Save uploaded documents` is clicked.
 - `Max chunks` caps how many chunks are embedded and indexed.
 - `Clear uploaded documents` removes uploaded files from the runtime `documents/` folder.
 - Only selected indexes are built, plus `Flat exact` for the answer context.

@@ -20,6 +20,7 @@ def build_pipeline(
     overlap: int,
     max_chunks: int,
     index_names: tuple[str, ...],
+    docs_signature: tuple[tuple[str, int, int], ...],
 ):
     pipeline = RagPipeline(
         documents_dir=DOCUMENTS_DIR,
@@ -31,6 +32,21 @@ def build_pipeline(
     )
     info = pipeline.build()
     return pipeline, info
+
+
+def get_docs_signature():
+    DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    return tuple(
+        sorted(
+            (
+                str(path.relative_to(DOCUMENTS_DIR)),
+                path.stat().st_size,
+                path.stat().st_mtime_ns,
+            )
+            for path in DOCUMENTS_DIR.rglob("*")
+            if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+        )
+    )
 
 
 st.title("RAG Index Comparison")
@@ -60,16 +76,19 @@ with st.sidebar:
         type=["pdf", "txt", "md", "docx"],
         accept_multiple_files=True,
     )
-    if uploads:
+    upload_clicked = st.button("Save uploaded documents")
+    if upload_clicked and uploads:
         DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+        saved_count = 0
         for uploaded in uploads:
             if uploaded.size > MAX_UPLOAD_MB * 1024 * 1024:
                 st.warning(f"Skipped {uploaded.name}: file is larger than {MAX_UPLOAD_MB} MB.")
                 continue
             target = DOCUMENTS_DIR / uploaded.name.replace("/", "_").replace("\\", "_")
             target.write_bytes(uploaded.getbuffer())
+            saved_count += 1
         st.cache_resource.clear()
-        st.success("Uploaded")
+        st.success(f"Saved {saved_count} document(s)")
     rebuild = st.button("Rebuild index")
     clear_docs = st.button("Clear uploaded documents")
 
@@ -84,6 +103,7 @@ if clear_docs:
     st.success("Cleared")
 
 answer_index_names = tuple(dict.fromkeys(["Flat exact", *selected_indexes]))
+docs_signature = get_docs_signature()
 
 with st.spinner("Building indexes..."):
     pipeline, info = build_pipeline(
@@ -92,6 +112,7 @@ with st.spinner("Building indexes..."):
         int(overlap),
         int(max_chunks),
         answer_index_names,
+        docs_signature,
     )
 
 col_a, col_b, col_c = st.columns(3)
