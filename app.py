@@ -1,13 +1,16 @@
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
 
 from rag import RagPipeline
 from rag.answering import extractive_answer
 from rag.config import DEFAULT_EMBEDDING_MODEL, DOCUMENTS_DIR
-from rag.llm import DEFAULT_LLM_MODEL, generate_rag_answer, get_hf_token
+from rag.llm import DEFAULT_GEMINI_MODEL, generate_rag_answer, get_gemini_api_key
+from rag.web_search import get_tavily_api_key, tavily_search
 
 
 st.set_page_config(page_title="RAG Index Comparison", layout="wide")
+load_dotenv()
 
 
 @st.cache_resource(show_spinner=False)
@@ -23,13 +26,17 @@ def build_pipeline(model_name: str, chunk_size: int, overlap: int):
 
 
 st.title("RAG Index Comparison")
-secret_hf_token = st.secrets.get("HF_TOKEN", "")
+secret_gemini_key = st.secrets.get("GEMINI_API_KEY", "")
+secret_tavily_key = st.secrets.get("TAVILY_API_KEY", "")
 
 with st.sidebar:
     model_name = st.text_input("Embedding model", DEFAULT_EMBEDDING_MODEL)
     use_llm = st.checkbox("Use LLM answer", value=True)
-    llm_model = st.text_input("LLM model", DEFAULT_LLM_MODEL)
-    hf_token_input = st.text_input("HF token", type="password")
+    llm_model = st.text_input("LLM model", DEFAULT_GEMINI_MODEL)
+    gemini_key_input = st.text_input("Gemini API key", type="password")
+    use_web_search = st.checkbox("Use Tavily web search", value=False)
+    tavily_key_input = st.text_input("Tavily API key", type="password")
+    tavily_topic = st.selectbox("Tavily topic", ["general", "news", "finance"], index=0)
     chunk_size = st.number_input("Chunk words", min_value=100, max_value=1200, value=350, step=50)
     overlap = st.number_input("Overlap words", min_value=0, max_value=300, value=60, step=20)
     top_k = st.slider("Top K", min_value=1, max_value=10, value=5)
@@ -82,10 +89,33 @@ if answer_clicked and query.strip():
 
     dense_report = next((report for report in reports if report.index_name == "Flat exact"), reports[0])
     st.subheader("Answer")
-    hf_token = get_hf_token(hf_token_input or secret_hf_token)
-    if use_llm and hf_token:
+    gemini_api_key = get_gemini_api_key(gemini_key_input or secret_gemini_key)
+    tavily_api_key = get_tavily_api_key(tavily_key_input or secret_tavily_key)
+    web_results = []
+
+    if use_web_search and tavily_api_key:
         try:
-            st.markdown(generate_rag_answer(query.strip(), dense_report.hits, hf_token, llm_model.strip()))
+            web_results = tavily_search(
+                query=query.strip(),
+                api_key=tavily_api_key,
+                topic=tavily_topic,
+                max_results=5,
+                search_depth="basic",
+            )
+        except Exception as error:
+            st.warning(f"Tavily failed: {error}")
+
+    if use_llm and gemini_api_key:
+        try:
+            st.markdown(
+                generate_rag_answer(
+                    question=query.strip(),
+                    hits=dense_report.hits,
+                    api_key=gemini_api_key,
+                    model=llm_model.strip(),
+                    web_results=web_results,
+                )
+            )
         except Exception as error:
             st.warning(f"LLM failed: {error}")
             st.markdown(extractive_answer(query.strip(), dense_report.hits))
@@ -103,6 +133,22 @@ if answer_clicked and query.strip():
         for report in reports
     ]
     st.dataframe(pd.DataFrame(summary), use_container_width=True, hide_index=True)
+
+    if web_results:
+        st.subheader("Web results")
+        web_summary = [
+            {
+                "title": item.title,
+                "url": item.url,
+                "score": round(item.score, 4),
+            }
+            for item in web_results
+        ]
+        st.dataframe(pd.DataFrame(web_summary), use_container_width=True, hide_index=True)
+        for item in web_results:
+            with st.expander(f"{item.title} | score={item.score:.4f}"):
+                st.write(item.url)
+                st.write(item.content)
 
     for report in reports:
         st.subheader(report.index_name)

@@ -3,48 +3,61 @@ import os
 import requests
 
 from .indexes import SearchHit
+from .web_search import TavilyResult
 
 
-DEFAULT_LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct:fastest"
-HF_CHAT_URL = "https://router.huggingface.co/v1/chat/completions"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
-def get_hf_token(user_token: str | None = None) -> str:
-    if user_token and user_token.strip():
-        return user_token.strip()
-    return os.getenv("HF_TOKEN", "").strip()
+def get_gemini_api_key(user_key: str | None = None) -> str:
+    if user_key and user_key.strip():
+        return user_key.strip()
+    return os.getenv("GEMINI_API_KEY", "").strip()
 
 
 def generate_rag_answer(
     question: str,
     hits: list[SearchHit],
-    token: str,
-    model: str = DEFAULT_LLM_MODEL,
+    api_key: str,
+    model: str = DEFAULT_GEMINI_MODEL,
+    web_results: list[TavilyResult] | None = None,
 ) -> str:
-    context = _format_context(hits)
     payload = {
-        "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You answer in Vietnamese. Use only the provided context. "
-                    "If the context is not enough, say that the document does not contain enough information. "
-                    "Keep the answer concise and cite source names in parentheses."
-                ),
-            },
+        "system_instruction": {
+            "parts": [
+                {
+                    "text": (
+                        "Tra loi bang tieng Viet. Chi duoc dung du lieu trong context da cung cap. "
+                        "Neu context khong du, noi ro tai lieu va ket qua web chua du thong tin. "
+                        "Tra loi ngan gon, uu tien dung su that va kem ten nguon trong ngoac."
+                    )
+                }
+            ]
+        },
+        "contents": [
             {
                 "role": "user",
-                "content": f"Question:\n{question}\n\nContext:\n{context}",
-            },
+                "parts": [
+                    {
+                        "text": (
+                            f"Question:\n{question}\n\n"
+                            f"Document context:\n{_format_document_context(hits)}\n\n"
+                            f"Web context:\n{_format_web_context(web_results or [])}"
+                        )
+                    }
+                ],
+            }
         ],
-        "temperature": 0.2,
-        "max_tokens": 450,
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 500,
+        },
     }
     response = requests.post(
-        HF_CHAT_URL,
+        GEMINI_API_URL.format(model=model),
         headers={
-            "Authorization": f"Bearer {token}",
+            "x-goog-api-key": api_key,
             "Content-Type": "application/json",
         },
         json=payload,
@@ -52,10 +65,10 @@ def generate_rag_answer(
     )
     response.raise_for_status()
     data = response.json()
-    return data["choices"][0]["message"]["content"].strip()
+    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
-def _format_context(hits: list[SearchHit], max_chars: int = 6000) -> str:
+def _format_document_context(hits: list[SearchHit], max_chars: int = 5000) -> str:
     parts = []
     total = 0
 
@@ -67,4 +80,18 @@ def _format_context(hits: list[SearchHit], max_chars: int = 6000) -> str:
         parts.append(item)
         total += len(item)
 
-    return "\n\n".join(parts)
+    return "\n\n".join(parts) if parts else "No document context."
+
+
+def _format_web_context(results: list[TavilyResult], max_chars: int = 3500) -> str:
+    parts = []
+    total = 0
+
+    for result in results:
+        item = f"[{result.title}] {result.url}\n{result.content}"
+        if total + len(item) > max_chars:
+            break
+        parts.append(item)
+        total += len(item)
+
+    return "\n\n".join(parts) if parts else "No web context."

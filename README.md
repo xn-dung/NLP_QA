@@ -9,7 +9,7 @@ Supported vector indexes:
 - IVF
 - IVF+PQ
 
-Embeddings run with `sentence-transformers/all-MiniLM-L6-v2`. LLM answers are optional and use a Hugging Face token.
+Embeddings run with `sentence-transformers/all-MiniLM-L6-v2`. LLM answers can use Gemini, and web search can use Tavily.
 
 ## Structure
 
@@ -47,12 +47,23 @@ For Hugging Face Spaces:
 
 The first run downloads the free embedding model from Hugging Face.
 
-## Optional LLM
+## Environment
 
-Create a Hugging Face token with permission to call Inference Providers, then add it to Streamlit secrets:
+Create a local `.env` file:
 
-```toml
-HF_TOKEN = "your_token_here"
+```env
+GEMINI_API_KEY=
+TAVILY_API_KEY=
 ```
 
-The app also accepts the token from the sidebar.
+You can also set the same keys in Streamlit secrets.
+
+## Optional LLM
+
+Required LLM key:
+
+- `GEMINI_API_KEY`
+
+Required web search key:
+
+- `TAVILY_API_KEY`
