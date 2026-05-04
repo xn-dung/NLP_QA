@@ -79,48 +79,53 @@ with st.form("question_form"):
     answer_clicked = st.form_submit_button("Answer")
 
 if answer_clicked and query.strip():
-    reports = [
-        report for report in pipeline.search(query.strip(), top_k=top_k)
-        if report.index_name in selected_indexes
-    ]
+    all_reports = pipeline.search(query.strip(), top_k=top_k)
+    reports = [report for report in all_reports if report.index_name in selected_indexes]
     if not reports:
         st.warning("Select at least one index.")
         st.stop()
 
-    dense_report = next((report for report in reports if report.index_name == "Flat exact"), reports[0])
+    answer_report = next((report for report in all_reports if report.index_name == "Flat exact"), all_reports[0])
     st.subheader("Answer")
     gemini_api_key = get_gemini_api_key(gemini_key_input or secret_gemini_key)
     tavily_api_key = get_tavily_api_key(tavily_key_input or secret_tavily_key)
     web_results = []
 
     if use_web_search and tavily_api_key:
-        try:
-            web_results = tavily_search(
-                query=query.strip(),
-                api_key=tavily_api_key,
-                topic=tavily_topic,
-                max_results=5,
-                search_depth="basic",
-            )
-        except Exception as error:
-            st.warning(f"Tavily failed: {error}")
+        with st.spinner("Searching web..."):
+            try:
+                web_results = tavily_search(
+                    query=query.strip(),
+                    api_key=tavily_api_key,
+                    topic=tavily_topic,
+                    max_results=5,
+                    search_depth="basic",
+                )
+            except Exception as error:
+                st.warning(f"Tavily failed: {error}")
+    elif use_web_search and not tavily_api_key:
+        st.warning("Tavily API key is missing.")
 
     if use_llm and gemini_api_key:
-        try:
-            st.markdown(
-                generate_rag_answer(
-                    question=query.strip(),
-                    hits=dense_report.hits,
-                    api_key=gemini_api_key,
-                    model=llm_model.strip(),
-                    web_results=web_results,
+        with st.spinner("Generating answer..."):
+            try:
+                st.markdown(
+                    generate_rag_answer(
+                        question=query.strip(),
+                        hits=answer_report.hits,
+                        api_key=gemini_api_key,
+                        model=llm_model.strip(),
+                        web_results=web_results,
+                    )
                 )
-            )
-        except Exception as error:
-            st.warning(f"LLM failed: {error}")
-            st.markdown(extractive_answer(query.strip(), dense_report.hits))
+            except Exception as error:
+                st.warning(f"LLM failed: {error}")
+                st.markdown(extractive_answer(query.strip(), answer_report.hits))
+    elif use_llm and not gemini_api_key:
+        st.warning("Gemini API key is missing.")
+        st.markdown(extractive_answer(query.strip(), answer_report.hits))
     else:
-        st.markdown(extractive_answer(query.strip(), dense_report.hits))
+        st.markdown(extractive_answer(query.strip(), answer_report.hits))
 
     summary = [
         {

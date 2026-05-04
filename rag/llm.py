@@ -23,14 +23,18 @@ def generate_rag_answer(
     model: str = DEFAULT_GEMINI_MODEL,
     web_results: list[TavilyResult] | None = None,
 ) -> str:
+    has_web = bool(web_results)
     payload = {
         "system_instruction": {
             "parts": [
                 {
                     "text": (
-                        "Tra loi bang tieng Viet. Chi duoc dung du lieu trong context da cung cap. "
-                        "Neu context khong du, noi ro tai lieu va ket qua web chua du thong tin. "
-                        "Tra loi ngan gon, uu tien dung su that va kem ten nguon trong ngoac."
+                        "Ban la tro ly RAG tra loi bang tieng Viet. Hay tong hop cau tra loi hoan chinh "
+                        "tu Document context. Neu Web context co du lieu, chi dung no de bo sung thong tin "
+                        "lien quan hoac cap nhat, khong thay the noi dung tai lieu neu khong co can cu. "
+                        "Khong bia thong tin ngoai context. Neu context khong du, noi ro phan nao chua du. "
+                        "Neu document va web mau thuan, neu ro su khac nhau. Cau tra loi nen mach lac, "
+                        "co ket luan truc tiep, va dan nguon bang ten file hoac ten trang trong ngoac."
                     )
                 }
             ]
@@ -42,6 +46,7 @@ def generate_rag_answer(
                     {
                         "text": (
                             f"Question:\n{question}\n\n"
+                            f"Use web search: {'yes' if has_web else 'no'}\n\n"
                             f"Document context:\n{_format_document_context(hits)}\n\n"
                             f"Web context:\n{_format_web_context(web_results or [])}"
                         )
@@ -51,7 +56,7 @@ def generate_rag_answer(
         ],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 500,
+            "maxOutputTokens": 700,
         },
     }
     response = requests.post(

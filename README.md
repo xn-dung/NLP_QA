@@ -10,6 +10,7 @@ Supported vector indexes:
 - IVF+PQ
 
 Embeddings run with `sentence-transformers/all-MiniLM-L6-v2`. LLM answers can use Gemini, and web search can use Tavily.
+The final answer is synthesized from retrieved documents. If Tavily is enabled, web results are added as extra context.
 
 ## Structure
 
@@ -67,3 +68,9 @@ Required LLM key:
 Required web search key:
 
 - `TAVILY_API_KEY`
+
+Answer behavior:
+
+- Gemini uses retrieved document chunks from `Flat exact` as the main context.
+- Tavily web context is only added when `Use Tavily web search` is enabled.
+- The selected indexes are still shown for retrieval comparison.
