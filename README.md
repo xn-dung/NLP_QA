@@ -6,8 +6,8 @@ Supported vector indexes:
 
 - Flat exact
 - HNSW
-- Random projection LSH
-- IVF Flat
+- IVF
+- IVF+PQ
 
 No paid API is required. Embeddings run with `sentence-transformers/all-MiniLM-L6-v2`.
 

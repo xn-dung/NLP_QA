@@ -30,8 +30,8 @@ with st.sidebar:
     top_k = st.slider("Top K", min_value=1, max_value=10, value=5)
     selected_indexes = st.multiselect(
         "Indexes",
-        ["Flat exact", "HNSW", "Random projection LSH", "IVF Flat"],
-        default=["Flat exact", "HNSW", "Random projection LSH", "IVF Flat"],
+        ["Flat exact", "HNSW", "IVF", "IVF+PQ"],
+        default=["Flat exact", "HNSW", "IVF", "IVF+PQ"],
     )
     uploads = st.file_uploader(
         "Upload documents",
@@ -62,11 +62,13 @@ if info.document_count == 0:
     st.warning("Add .pdf, .txt, .md, or .docx files to documents/, then click Rebuild index.")
     st.stop()
 
-query = st.text_input("Question")
+with st.form("question_form"):
+    query = st.text_input("Question")
+    answer_clicked = st.form_submit_button("Answer")
 
-if query:
+if answer_clicked and query.strip():
     reports = [
-        report for report in pipeline.search(query, top_k=top_k)
+        report for report in pipeline.search(query.strip(), top_k=top_k)
         if report.index_name in selected_indexes
     ]
     if not reports:
@@ -75,7 +77,7 @@ if query:
 
     dense_report = next((report for report in reports if report.index_name == "Flat exact"), reports[0])
     st.subheader("Extractive answer")
-    st.markdown(extractive_answer(query, dense_report.hits))
+    st.markdown(extractive_answer(query.strip(), dense_report.hits))
 
     summary = [
         {
@@ -95,4 +97,4 @@ if query:
             with st.expander(f"#{hit.rank} | {hit.source} | score={hit.score:.4f}"):
                 st.write(hit.text)
 else:
-    st.info("Enter a question to retrieve and compare results.")
+    st.info("Enter a question, then click Answer.")

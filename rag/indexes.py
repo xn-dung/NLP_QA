@@ -109,37 +109,8 @@ class HnswIndex(BaseIndex):
         return _hits_from_indices(self.name, self.chunks, labels[0], scores)
 
 
-class LshIndex(BaseIndex):
-    name = "Random projection LSH"
-
-    def __init__(self, num_planes: int = 18, seed: int = 42):
-        super().__init__()
-        self.num_planes = num_planes
-        self.seed = seed
-
-    def _build(self, chunks: list[Chunk], embeddings: np.ndarray) -> None:
-        self.chunks = chunks
-        self.embeddings = embeddings
-        rng = np.random.default_rng(self.seed)
-        self.planes = rng.normal(size=(embeddings.shape[1], self.num_planes)).astype("float32")
-        self.signatures = self._signature(embeddings)
-
-    def _search(self, query_embedding: np.ndarray, top_k: int) -> list[SearchHit]:
-        query_sig = self._signature(query_embedding.reshape(1, -1))[0]
-        hamming = np.count_nonzero(self.signatures != query_sig, axis=1)
-        candidate_count = min(max(top_k * 8, top_k), len(self.chunks))
-        candidate_ids = np.argsort(hamming)[:candidate_count]
-        scores = self.embeddings[candidate_ids] @ query_embedding
-        ordered = candidate_ids[np.argsort(scores)[::-1]][:top_k]
-        ordered_scores = self.embeddings[ordered] @ query_embedding
-        return _hits_from_indices(self.name, self.chunks, ordered, ordered_scores)
-
-    def _signature(self, vectors: np.ndarray) -> np.ndarray:
-        return (vectors @ self.planes) >= 0
-
-
 class IvfFlatIndex(BaseIndex):
-    name = "IVF Flat"
+    name = "IVF"
 
     def __init__(self, nlist: int = 8, nprobe: int = 3, seed: int = 42):
         super().__init__()
@@ -184,12 +155,99 @@ class IvfFlatIndex(BaseIndex):
         return _hits_from_indices(self.name, self.chunks, ordered, ordered_scores)
 
 
+class IvfPqIndex(BaseIndex):
+    name = "IVF+PQ"
+
+    def __init__(
+        self,
+        nlist: int = 8,
+        nprobe: int = 3,
+        pq_subvectors: int = 8,
+        pq_codebook_size: int = 16,
+        seed: int = 42,
+    ):
+        super().__init__()
+        self.nlist = nlist
+        self.nprobe = nprobe
+        self.pq_subvectors = pq_subvectors
+        self.pq_codebook_size = pq_codebook_size
+        self.seed = seed
+
+    def _build(self, chunks: list[Chunk], embeddings: np.ndarray) -> None:
+        self.chunks = chunks
+        self.embedding_dim = embeddings.shape[1]
+        self.cluster_count = min(self.nlist, max(1, int(np.sqrt(len(chunks)))))
+
+        if self.cluster_count == 1:
+            self.labels = np.zeros(len(chunks), dtype=int)
+            self.centroids = embeddings.mean(axis=0, keepdims=True).astype("float32")
+            self.centroids = _normalize_rows(self.centroids)
+        else:
+            self.kmeans = KMeans(
+                n_clusters=self.cluster_count,
+                random_state=self.seed,
+                n_init="auto",
+            )
+            self.labels = self.kmeans.fit_predict(embeddings)
+            self.centroids = self.kmeans.cluster_centers_.astype("float32")
+            self.centroids = _normalize_rows(self.centroids)
+
+        residuals = embeddings - self.centroids[self.labels]
+        self.slices = _subvector_slices(self.embedding_dim, self.pq_subvectors)
+        self.codebooks = []
+        self.codes = np.zeros((len(chunks), len(self.slices)), dtype=np.int16)
+
+        for part_id, vector_slice in enumerate(self.slices):
+            sub_residuals = residuals[:, vector_slice]
+            codebook_size = min(self.pq_codebook_size, len(chunks))
+
+            if codebook_size <= 1:
+                centers = sub_residuals.mean(axis=0, keepdims=True).astype("float32")
+                labels = np.zeros(len(chunks), dtype=np.int16)
+            else:
+                kmeans = KMeans(
+                    n_clusters=codebook_size,
+                    random_state=self.seed + part_id,
+                    n_init="auto",
+                )
+                labels = kmeans.fit_predict(sub_residuals).astype(np.int16)
+                centers = kmeans.cluster_centers_.astype("float32")
+
+            self.codebooks.append(centers)
+            self.codes[:, part_id] = labels
+
+        self.reconstructed = self._reconstruct_all()
+        self.inverted_lists = {
+            cluster_id: np.where(self.labels == cluster_id)[0]
+            for cluster_id in range(self.cluster_count)
+        }
+
+    def _search(self, query_embedding: np.ndarray, top_k: int) -> list[SearchHit]:
+        centroid_scores = self.centroids @ query_embedding
+        selected_clusters = np.argsort(centroid_scores)[::-1][: min(self.nprobe, self.cluster_count)]
+        candidate_ids = np.concatenate([self.inverted_lists[int(cluster)] for cluster in selected_clusters])
+
+        if len(candidate_ids) == 0:
+            candidate_ids = np.arange(len(self.chunks))
+
+        scores = self.reconstructed[candidate_ids] @ query_embedding
+        ordered = candidate_ids[np.argsort(scores)[::-1]][:top_k]
+        ordered_scores = self.reconstructed[ordered] @ query_embedding
+        return _hits_from_indices(self.name, self.chunks, ordered, ordered_scores)
+
+    def _reconstruct_all(self) -> np.ndarray:
+        vectors = self.centroids[self.labels].copy()
+        for part_id, vector_slice in enumerate(self.slices):
+            vectors[:, vector_slice] += self.codebooks[part_id][self.codes[:, part_id]]
+        return _normalize_rows(vectors.astype("float32"))
+
+
 def build_indexes(chunks: list[Chunk], embeddings: np.ndarray) -> list[BaseIndex]:
     indexes: list[BaseIndex] = [
         FlatIndex(),
         HnswIndex(),
-        LshIndex(),
         IvfFlatIndex(),
+        IvfPqIndex(),
     ]
     for index in indexes:
         index.build(chunks, embeddings)
@@ -213,3 +271,19 @@ def _normalize_rows(vectors: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(vectors, axis=1, keepdims=True)
     norms[norms == 0] = 1
     return vectors / norms
+
+
+def _subvector_slices(dim: int, requested_parts: int) -> list[slice]:
+    parts = min(requested_parts, dim)
+    base = dim // parts
+    remainder = dim % parts
+    slices = []
+    start = 0
+
+    for part_id in range(parts):
+        width = base + (1 if part_id < remainder else 0)
+        end = start + width
+        slices.append(slice(start, end))
+        start = end
+
+    return slices
