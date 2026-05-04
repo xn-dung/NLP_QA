@@ -4,6 +4,7 @@ import streamlit as st
 from rag import RagPipeline
 from rag.answering import extractive_answer
 from rag.config import DEFAULT_EMBEDDING_MODEL, DOCUMENTS_DIR
+from rag.llm import DEFAULT_LLM_MODEL, generate_rag_answer, get_hf_token
 
 
 st.set_page_config(page_title="RAG Index Comparison", layout="wide")
@@ -22,9 +23,13 @@ def build_pipeline(model_name: str, chunk_size: int, overlap: int):
 
 
 st.title("RAG Index Comparison")
+secret_hf_token = st.secrets.get("HF_TOKEN", "")
 
 with st.sidebar:
     model_name = st.text_input("Embedding model", DEFAULT_EMBEDDING_MODEL)
+    use_llm = st.checkbox("Use LLM answer", value=True)
+    llm_model = st.text_input("LLM model", DEFAULT_LLM_MODEL)
+    hf_token_input = st.text_input("HF token", type="password")
     chunk_size = st.number_input("Chunk words", min_value=100, max_value=1200, value=350, step=50)
     overlap = st.number_input("Overlap words", min_value=0, max_value=300, value=60, step=20)
     top_k = st.slider("Top K", min_value=1, max_value=10, value=5)
@@ -76,8 +81,16 @@ if answer_clicked and query.strip():
         st.stop()
 
     dense_report = next((report for report in reports if report.index_name == "Flat exact"), reports[0])
-    st.subheader("Extractive answer")
-    st.markdown(extractive_answer(query.strip(), dense_report.hits))
+    st.subheader("Answer")
+    hf_token = get_hf_token(hf_token_input or secret_hf_token)
+    if use_llm and hf_token:
+        try:
+            st.markdown(generate_rag_answer(query.strip(), dense_report.hits, hf_token, llm_model.strip()))
+        except Exception as error:
+            st.warning(f"LLM failed: {error}")
+            st.markdown(extractive_answer(query.strip(), dense_report.hits))
+    else:
+        st.markdown(extractive_answer(query.strip(), dense_report.hits))
 
     summary = [
         {

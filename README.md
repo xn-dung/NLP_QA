@@ -9,7 +9,7 @@ Supported vector indexes:
 - IVF
 - IVF+PQ
 
-No paid API is required. Embeddings run with `sentence-transformers/all-MiniLM-L6-v2`.
+Embeddings run with `sentence-transformers/all-MiniLM-L6-v2`. LLM answers are optional and use a Hugging Face token.
 
 ## Structure
 
@@ -46,3 +46,13 @@ For Hugging Face Spaces:
 3. Upload this project.
 
 The first run downloads the free embedding model from Hugging Face.
+
+## Optional LLM
+
+Create a Hugging Face token with permission to call Inference Providers, then add it to Streamlit secrets:
+
+```toml
+HF_TOKEN = "your_token_here"
+```
+
+The app also accepts the token from the sidebar.
