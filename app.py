@@ -25,8 +25,8 @@ st.title("RAG Index Comparison")
 
 with st.sidebar:
     model_name = st.text_input("Embedding model", DEFAULT_EMBEDDING_MODEL)
-    chunk_size = st.number_input("Chunk size", min_value=300, max_value=3000, value=900, step=100)
-    overlap = st.number_input("Overlap", min_value=0, max_value=800, value=150, step=50)
+    chunk_size = st.number_input("Chunk words", min_value=100, max_value=1200, value=350, step=50)
+    overlap = st.number_input("Overlap words", min_value=0, max_value=300, value=60, step=20)
     top_k = st.slider("Top K", min_value=1, max_value=10, value=5)
     selected_indexes = st.multiselect(
         "Indexes",
@@ -41,7 +41,7 @@ with st.sidebar:
     if uploads:
         DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
         for uploaded in uploads:
-            target = DOCUMENTS_DIR / uploaded.name
+            target = DOCUMENTS_DIR / uploaded.name.replace("/", "_").replace("\\", "_")
             target.write_bytes(uploaded.getbuffer())
         st.cache_resource.clear()
         st.success("Uploaded")
@@ -59,7 +59,7 @@ col_b.metric("Chunks", info.chunk_count)
 col_c.metric("Folder", "documents/")
 
 if info.document_count == 0:
-    st.warning("Hãy thêm tài liệu .pdf, .txt, .md hoặc .docx vào thư mục documents/ rồi bấm Rebuild index.")
+    st.warning("Add .pdf, .txt, .md, or .docx files to documents/, then click Rebuild index.")
     st.stop()
 
 query = st.text_input("Question")
@@ -70,12 +70,12 @@ if query:
         if report.index_name in selected_indexes
     ]
     if not reports:
-        st.warning("Chọn ít nhất một index.")
+        st.warning("Select at least one index.")
         st.stop()
 
     dense_report = next((report for report in reports if report.index_name == "Flat exact"), reports[0])
-    st.subheader("Answer")
-    st.write(extractive_answer(query, dense_report.hits))
+    st.subheader("Extractive answer")
+    st.markdown(extractive_answer(query, dense_report.hits))
 
     summary = [
         {
@@ -95,4 +95,4 @@ if query:
             with st.expander(f"#{hit.rank} | {hit.source} | score={hit.score:.4f}"):
                 st.write(hit.text)
 else:
-    st.info("Nhập câu hỏi để truy xuất và so sánh kết quả.")
+    st.info("Enter a question to retrieve and compare results.")

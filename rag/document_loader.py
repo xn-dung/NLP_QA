@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 from docx import Document as DocxDocument
 from pypdf import PdfReader
@@ -42,12 +43,21 @@ def _read_file(path: Path) -> str:
 def _read_pdf(path: Path) -> str:
     reader = PdfReader(str(path))
     pages = []
-    for page in reader.pages:
-        pages.append(page.extract_text() or "")
-    return "\n".join(pages)
+    for page_number, page in enumerate(reader.pages, start=1):
+        text = page.extract_text() or ""
+        pages.append(f"\n[Page {page_number}]\n{text}")
+    return _clean_text("\n".join(pages))
 
 
 def _read_docx(path: Path) -> str:
     doc = DocxDocument(str(path))
-    return "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    return _clean_text("\n".join(paragraph.text for paragraph in doc.paragraphs))
 
+
+def _clean_text(text: str) -> str:
+    text = text.replace("\x00", " ")
+    text = re.sub(r"([A-Za-z])-\s*\n\s*([A-Za-z])", r"\1\2", text)
+    text = re.sub(r"(?<![.!?:;\]\)])\n(?!\[Page \d+\])", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
