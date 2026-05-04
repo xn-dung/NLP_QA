@@ -9,7 +9,7 @@ Supported vector indexes:
 - IVF
 - IVF+PQ
 
-Embeddings run with `sentence-transformers/all-MiniLM-L6-v2`. LLM answers can use Gemini, and web search can use Tavily.
+Embeddings run with `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` for Vietnamese-English retrieval. LLM answers can use Gemini, and web search can use Tavily.
 The final answer is synthesized from retrieved documents. If Tavily is enabled, web results are added as extra context.
 
 ## Structure

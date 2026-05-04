@@ -30,7 +30,9 @@ def generate_rag_answer(
                 {
                     "text": (
                         "Ban la tro ly RAG tra loi bang tieng Viet. Hay tong hop cau tra loi hoan chinh "
-                        "tu Document context. Neu Web context co du lieu, chi dung no de bo sung thong tin "
+                        "tu Document context. Document context co the bang tieng Anh, tieng Viet, hoac ngon ngu khac; "
+                        "hay hieu noi dung goc, dich/dien giai chinh xac sang tieng Viet, khong bo qua nguon tieng Anh. "
+                        "Neu Web context co du lieu, chi dung no de bo sung thong tin "
                         "lien quan hoac cap nhat, khong thay the noi dung tai lieu neu khong co can cu. "
                         "Khong bia thong tin ngoai context. Neu context khong du, noi ro phan nao chua du. "
                         "Neu document va web mau thuan, neu ro su khac nhau. Cau tra loi nen mach lac, "
@@ -46,6 +48,8 @@ def generate_rag_answer(
                     {
                         "text": (
                             f"Question:\n{question}\n\n"
+                            "The user question may be Vietnamese while the document may be English. "
+                            "Match the meaning across languages before answering.\n\n"
                             f"Use web search: {'yes' if has_web else 'no'}\n\n"
                             f"Document context:\n{_format_document_context(hits)}\n\n"
                             f"Web context:\n{_format_web_context(web_results or [])}"
