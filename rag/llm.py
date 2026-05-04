@@ -61,7 +61,7 @@ def generate_rag_answer(
         ],
         "generationConfig": {
             "temperature": 0.2,
-            "maxOutputTokens": 1400,
+            "maxOutputTokens": 2000,
         },
     }
     response = requests.post(

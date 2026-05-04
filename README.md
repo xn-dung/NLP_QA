@@ -24,6 +24,7 @@ The final answer is synthesized from retrieved documents. If Tavily is enabled, 
 ```
 
 Put `.pdf`, `.txt`, `.md`, or `.docx` files into `documents/`.
+Uploaded files in the Streamlit UI are also written to `documents/` in the app runtime.
 
 ## Run Local
 
@@ -74,3 +75,10 @@ Answer behavior:
 - Gemini uses retrieved document chunks from `Flat exact` as the main context.
 - Tavily web context is only added when `Use Tavily web search` is enabled.
 - The selected indexes are still shown for retrieval comparison.
+
+Memory controls:
+
+- Uploads larger than 25 MB are skipped.
+- `Max chunks` caps how many chunks are embedded and indexed.
+- `Clear uploaded documents` removes uploaded files from the runtime `documents/` folder.
+- Only selected indexes are built, plus `Flat exact` for the answer context.

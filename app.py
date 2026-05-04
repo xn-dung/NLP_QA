@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 from rag import RagPipeline
 from rag.answering import extractive_answer
-from rag.config import DEFAULT_EMBEDDING_MODEL, DOCUMENTS_DIR
+from rag.config import DEFAULT_EMBEDDING_MODEL, DOCUMENTS_DIR, SUPPORTED_EXTENSIONS
 from rag.llm import DEFAULT_GEMINI_MODEL, generate_rag_answer, get_gemini_api_key
 from rag.web_search import get_tavily_api_key, tavily_search
 
@@ -14,12 +14,20 @@ load_dotenv()
 
 
 @st.cache_resource(show_spinner=False)
-def build_pipeline(model_name: str, chunk_size: int, overlap: int):
+def build_pipeline(
+    model_name: str,
+    chunk_size: int,
+    overlap: int,
+    max_chunks: int,
+    index_names: tuple[str, ...],
+):
     pipeline = RagPipeline(
         documents_dir=DOCUMENTS_DIR,
         model_name=model_name,
         chunk_size=chunk_size,
         overlap=overlap,
+        max_chunks=max_chunks,
+        index_names=set(index_names),
     )
     info = pipeline.build()
     return pipeline, info
@@ -28,6 +36,7 @@ def build_pipeline(model_name: str, chunk_size: int, overlap: int):
 st.title("RAG Index Comparison")
 secret_gemini_key = st.secrets.get("GEMINI_API_KEY", "")
 secret_tavily_key = st.secrets.get("TAVILY_API_KEY", "")
+MAX_UPLOAD_MB = 25
 
 with st.sidebar:
     model_name = st.text_input("Embedding model", DEFAULT_EMBEDDING_MODEL)
@@ -39,6 +48,7 @@ with st.sidebar:
     tavily_topic = st.selectbox("Tavily topic", ["general", "news", "finance"], index=0)
     chunk_size = st.number_input("Chunk words", min_value=100, max_value=1200, value=350, step=50)
     overlap = st.number_input("Overlap words", min_value=0, max_value=300, value=60, step=20)
+    max_chunks = st.number_input("Max chunks", min_value=100, max_value=2000, value=500, step=100)
     top_k = st.slider("Top K", min_value=1, max_value=10, value=5)
     selected_indexes = st.multiselect(
         "Indexes",
@@ -53,17 +63,36 @@ with st.sidebar:
     if uploads:
         DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
         for uploaded in uploads:
+            if uploaded.size > MAX_UPLOAD_MB * 1024 * 1024:
+                st.warning(f"Skipped {uploaded.name}: file is larger than {MAX_UPLOAD_MB} MB.")
+                continue
             target = DOCUMENTS_DIR / uploaded.name.replace("/", "_").replace("\\", "_")
             target.write_bytes(uploaded.getbuffer())
         st.cache_resource.clear()
         st.success("Uploaded")
     rebuild = st.button("Rebuild index")
+    clear_docs = st.button("Clear uploaded documents")
 
 if rebuild:
     st.cache_resource.clear()
 
+if clear_docs:
+    for path in DOCUMENTS_DIR.rglob("*"):
+        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
+            path.unlink()
+    st.cache_resource.clear()
+    st.success("Cleared")
+
+answer_index_names = tuple(dict.fromkeys(["Flat exact", *selected_indexes]))
+
 with st.spinner("Building indexes..."):
-    pipeline, info = build_pipeline(model_name, int(chunk_size), int(overlap))
+    pipeline, info = build_pipeline(
+        model_name,
+        int(chunk_size),
+        int(overlap),
+        int(max_chunks),
+        answer_index_names,
+    )
 
 col_a, col_b, col_c = st.columns(3)
 col_a.metric("Documents", info.document_count)

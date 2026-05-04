@@ -242,12 +242,20 @@ class IvfPqIndex(BaseIndex):
         return _normalize_rows(vectors.astype("float32"))
 
 
-def build_indexes(chunks: list[Chunk], embeddings: np.ndarray) -> list[BaseIndex]:
-    indexes: list[BaseIndex] = [
+def build_indexes(
+    chunks: list[Chunk],
+    embeddings: np.ndarray,
+    index_names: set[str] | None = None,
+) -> list[BaseIndex]:
+    available_indexes: list[BaseIndex] = [
         FlatIndex(),
         HnswIndex(),
         IvfFlatIndex(),
         IvfPqIndex(),
+    ]
+    indexes = [
+        index for index in available_indexes
+        if index_names is None or index.name in index_names
     ]
     for index in indexes:
         index.build(chunks, embeddings)

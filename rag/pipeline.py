@@ -21,19 +21,28 @@ class RagPipeline:
         model_name: str = DEFAULT_EMBEDDING_MODEL,
         chunk_size: int = 900,
         overlap: int = 150,
+        max_chunks: int = 500,
+        index_names: set[str] | None = None,
     ):
         self.documents_dir = documents_dir
         self.model_name = model_name
         self.chunk_size = chunk_size
         self.overlap = overlap
+        self.max_chunks = max_chunks
+        self.index_names = index_names
         self.documents: list[RawDocument] = []
         self.chunks: list[Chunk] = []
         self.embedding_model: EmbeddingModel | None = None
         self.indexes = []
+        self._document_count = 0
+        self._sources: list[str] = []
 
     def build(self) -> CorpusInfo:
-        self.documents = load_documents(self.documents_dir)
-        self.chunks = chunk_documents(self.documents, self.chunk_size, self.overlap)
+        documents = load_documents(self.documents_dir)
+        self._document_count = len(documents)
+        self._sources = [doc.source for doc in documents]
+        self.chunks = chunk_documents(documents, self.chunk_size, self.overlap)[: self.max_chunks]
+        self.documents = []
 
         if not self.chunks:
             self.indexes = []
@@ -41,7 +50,7 @@ class RagPipeline:
 
         self.embedding_model = EmbeddingModel(self.model_name)
         embeddings = self.embedding_model.encode([chunk.text for chunk in self.chunks])
-        self.indexes = build_indexes(self.chunks, embeddings)
+        self.indexes = build_indexes(self.chunks, embeddings, self.index_names)
         return self.info()
 
     def search(self, query: str, top_k: int = 5) -> list[SearchReport]:
@@ -58,7 +67,7 @@ class RagPipeline:
 
     def info(self) -> CorpusInfo:
         return CorpusInfo(
-            document_count=len(self.documents),
+            document_count=self._document_count,
             chunk_count=len(self.chunks),
-            sources=[doc.source for doc in self.documents],
+            sources=self._sources,
         )
